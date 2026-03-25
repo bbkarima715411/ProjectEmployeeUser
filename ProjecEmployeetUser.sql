@@ -72,13 +72,12 @@ CREATE TABLE TakePart
 GO
 
 --J'insere des données test
-
 INSERT INTO Users (UserId, Email, PasswordHash, Salt)
 VALUES
 (NEWID(), 'alice@test.be', HASHBYTES('SHA2_256', 'demo'), NEWID()),
 (NEWID(), 'karim@test.be', HASHBYTES('SHA2_256', 'demo'), NEWID());
 GO
-
+--Affiché les User
 SELECT * FROM Users;
 GO
 
@@ -148,5 +147,99 @@ END;
 GO
 
 --Créé une procedure liste des user diponible
+CREATE PROCEDURE sp_GetAvailableEmployees
+AS
+BEGIN
+    SET NOCOUNT ON;
 
+    SELECT e.EmployeeId, e.Firstname, e.Lastname
+    FROM Employees e
+    WHERE NOT EXISTS
+    (
+        SELECT 1
+        FROM TakePart tp
+        WHERE tp.EmployeeId = e.EmployeeId
+          AND (tp.EndDate IS NULL OR tp.EndDate >= GETDATE())
+    );
+END;
+GO
+
+--Créé une procedure pour voir si un user fait partie d'un projet
+
+CREATE PROCEDURE sp_IsEmployeeInProject
+    @EmployeeId UNIQUEIDENTIFIER,
+    @ProjectId UNIQUEIDENTIFIER
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF EXISTS (
+        SELECT 1
+        FROM Projects
+        WHERE ProjectId = @ProjectId
+          AND ManagerEmployeeId = @EmployeeId
+    )
+    OR EXISTS (
+        SELECT 1
+        FROM TakePart
+        WHERE EmployeeId = @EmployeeId
+          AND ProjectId = @ProjectId
+          AND (EndDate IS NULL OR EndDate >= GETDATE())
+    )
+    BEGIN
+        SELECT 1 AS IsInProject;
+    END
+    ELSE
+    BEGIN
+        SELECT 0 AS IsInProject;
+    END
+END;
+GO
+
+--Créé une procedure ecrire post
+CREATE PROCEDURE sp_WritePost
+    @EmployeeId UNIQUEIDENTIFIER,
+    @ProjectId UNIQUEIDENTIFIER,
+    @Subject VARCHAR(256),
+    @Content NVARCHAR(MAX)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM Projects
+        WHERE ProjectId = @ProjectId
+          AND ManagerEmployeeId = @EmployeeId
+    )
+    AND NOT EXISTS (
+        SELECT 1
+        FROM TakePart
+        WHERE EmployeeId = @EmployeeId
+          AND ProjectId = @ProjectId
+          AND (EndDate IS NULL OR EndDate >= GETDATE())
+    )
+    BEGIN
+        RAISERROR('Cet employé n''a pas accès à ce projet.', 16, 1);
+        RETURN;
+    END
+
+    INSERT INTO Posts (PostId, Subject, Content, SendDate, EmployeeId, ProjectId)
+    VALUES (NEWID(), @Subject, @Content, GETDATE(), @EmployeeId, @ProjectId);
+END;
+GO
+
+--Test
+EXEC sp_RegisterUser
+    @Email = 'sara@test.be',
+    @Password = 'Secret123',
+    @Firstname = 'Sara',
+    @Lastname = 'Dupond',
+    @Hiredate = '2025-01-10',
+    @IsProjectManager = 1;
+GO
+
+SELECT * FROM Users;
+SELECT * FROM Employees;
+GO
 
